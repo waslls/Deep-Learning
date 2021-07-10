@@ -1,6 +1,7 @@
 """
 original code from WZMIAOMIAO/deep-learning-for-image-processing:
 https://github.com/WZMIAOMIAO/deep-learning-for-image-processing/blob/master/pytorch_classification/vision_transformer/vit_model.py
+video web：https://www.bilibili.com/video/BV1AL411W7dT?from=search&seid=16335773740561031937
 """
 from functools import partial
 from collections import OrderedDict
@@ -44,7 +45,7 @@ class PatchEmbed(nn.Module):
     """
     2D Image to Patch Embedding
     """
-    def __init__(self, img_size=224, patch_size=16, in_c=3, embed_dim=768, norm_layer=None):
+    def __init__(self, img_size=224, patch_size=16, in_c=3, embed_dim=768, norm_layer=None):#针对large或huge模型时 embed_dim会变
         super().__init__()
         img_size = (img_size, img_size)
         patch_size = (patch_size, patch_size)
@@ -63,12 +64,12 @@ class PatchEmbed(nn.Module):
 
         # flatten: [B, C, H, W] -> [B, C, HW]
         # transpose: [B, C, HW] -> [B, HW, C]
-        x = self.proj(x).flatten(2).transpose(1, 2)
+        x = self.proj(x).flatten(2).transpose(1, 2)#从第二个维度开始flatten
         x = self.norm(x)
         return x
 
 
-class Attention(nn.Module):
+class Attention(nn.Module):#muti_head self_attention
     def __init__(self,
                  dim,   # 输入token的dim
                  num_heads=8,
@@ -78,7 +79,7 @@ class Attention(nn.Module):
                  proj_drop_ratio=0.):
         super(Attention, self).__init__()
         self.num_heads = num_heads
-        head_dim = dim // num_heads
+        head_dim = dim // num_heads##视频6:14 假设有两个头，则每个头的维度为最开始qkv的dim除以2
         self.scale = qk_scale or head_dim ** -0.5
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop_ratio)
