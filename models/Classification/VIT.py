@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 
 
-def drop_path(x, drop_prob: float = 0., training: bool = False):
+def drop_path(x, drop_prob: float = 0., training: bool = False):#efficientnet里面有讲
     """
     Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
     This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
@@ -79,34 +79,34 @@ class Attention(nn.Module):#muti_head self_attention
                  proj_drop_ratio=0.):
         super(Attention, self).__init__()
         self.num_heads = num_heads
-        head_dim = dim // num_heads##视频6:14 假设有两个头，则每个头的维度为最开始qkv的dim除以2
-        self.scale = qk_scale or head_dim ** -0.5
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        head_dim = dim // num_heads#视频6:14 得到每个head对应的qkv的dim（假设有两个头，则每个头的维度为最开始qkv的dim除以2）
+        self.scale = qk_scale or head_dim ** -0.5#Q乘K转置后要除以根号下dim分之一
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)#qkv是通过全连接层实现的(有些代码通过三个全连接层分别得到qkv，而此代码一次生成所有qkv，这样可能有助于并行化)
         self.attn_drop = nn.Dropout(attn_drop_ratio)
-        self.proj = nn.Linear(dim, dim)
+        self.proj = nn.Linear(dim, dim)#每个head的qkv最终要拼接起来再进行映射，这里就是映射
         self.proj_drop = nn.Dropout(proj_drop_ratio)
 
     def forward(self, x):
-        # [batch_size, num_patches + 1, total_embed_dim]
+        # [batch_size, num_patches + 1, total_embed_dim]#+1是要加上class token  total_embed_dim就是上面的dim
         B, N, C = x.shape
 
         # qkv(): -> [batch_size, num_patches + 1, 3 * total_embed_dim]
         # reshape: -> [batch_size, num_patches + 1, 3, num_heads, embed_dim_per_head]
         # permute: -> [3, batch_size, num_heads, num_patches + 1, embed_dim_per_head]
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)#先经qkv函数得到连在一起的qkv，然后reshape成3个独立的qkv
         # [batch_size, num_heads, num_patches + 1, embed_dim_per_head]
         q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
 
         # transpose: -> [batch_size, num_heads, embed_dim_per_head, num_patches + 1]
         # @: multiply -> [batch_size, num_heads, num_patches + 1, num_patches + 1]
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
+        attn = (q @ k.transpose(-2, -1)) * self.scale#多维矩阵乘法相当于对最后两维做，李宏毅ppt是K转置*Q，但这里由于行列表示和他的是反的，这里在李宏毅里相当于QT*K，即A矩阵的转置，自然是对行做softmax
+        attn = attn.softmax(dim=-1)#对每一行做softmax处理
         attn = self.attn_drop(attn)
 
         # @: multiply -> [batch_size, num_heads, num_patches + 1, embed_dim_per_head]
         # transpose: -> [batch_size, num_patches + 1, num_heads, embed_dim_per_head]
         # reshape: -> [batch_size, num_patches + 1, total_embed_dim]
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)#reshape相当于将每个头的结果拼接到一起然后经过映射(FC)得到最终结果(transpose就是为了reshape操作)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
@@ -120,9 +120,9 @@ class Mlp(nn.Module):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.fc1 = nn.Linear(in_features, hidden_features)#第一个FC的输出单元是输入的四倍
         self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.fc2 = nn.Linear(hidden_features, out_features)#out_features和in_features一样
         self.drop = nn.Dropout(drop)
 
     def forward(self, x):
@@ -143,7 +143,7 @@ class Block(nn.Module):
                  qk_scale=None,
                  drop_ratio=0.,
                  attn_drop_ratio=0.,
-                 drop_path_ratio=0.,
+                 drop_path_ratio=0.,#视频20:45
                  act_layer=nn.GELU,
                  norm_layer=nn.LayerNorm):
         super(Block, self).__init__()
@@ -165,7 +165,7 @@ class Block(nn.Module):
 class VisionTransformer(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_c=3, num_classes=1000,
                  embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.0, qkv_bias=True,
-                 qk_scale=None, representation_size=None, distilled=False, drop_ratio=0.,
+                 qk_scale=None, representation_size=None, distilled=False, drop_ratio=0.,#representation_size 视频23:33  distilled为兼容搭建DeiT使用  embed_layer之前定义的层结构
                  attn_drop_ratio=0., drop_path_ratio=0., embed_layer=PatchEmbed, norm_layer=None,
                  act_layer=None):
         """
@@ -198,22 +198,23 @@ class VisionTransformer(nn.Module):
         self.patch_embed = embed_layer(img_size=img_size, patch_size=patch_size, in_c=in_c, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))#这是可训练的参数  第一个1表示batch维度 为了方便concat拼接
         self.dist_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if distilled else None
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + self.num_tokens, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + self.num_tokens, embed_dim))#也是可训练的
         self.pos_drop = nn.Dropout(p=drop_ratio)
 
-        dpr = [x.item() for x in torch.linspace(0, drop_path_ratio, depth)]  # stochastic depth decay rule
+        dpr = [x.item() for x in torch.linspace(0, drop_path_ratio, depth)]  # stochastic depth decay rule  视频：27:25 创建深度递增的drop_path  
         self.blocks = nn.Sequential(*[
             Block(dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                  drop_ratio=drop_ratio, attn_drop_ratio=attn_drop_ratio, drop_path_ratio=dpr[i],
+                  drop_ratio=drop_ratio, attn_drop_ratio=attn_drop_ratio, drop_path_ratio=dpr[i],#drop_path_ratio是变化的
                   norm_layer=norm_layer, act_layer=act_layer)
-            for i in range(depth)
+            for i in range(depth)#创建L个transformer encoder BLOCK
         ])
         self.norm = norm_layer(embed_dim)
 
         # Representation layer
-        if representation_size and not distilled:
+        if representation_size and not distilled:#29:31 构建pre_logits
+            
             self.has_logits = True
             self.num_features = representation_size
             self.pre_logits = nn.Sequential(OrderedDict([
@@ -225,7 +226,7 @@ class VisionTransformer(nn.Module):
             self.pre_logits = nn.Identity()
 
         # Classifier head(s)
-        self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()#分类头
         self.head_dist = None
         if distilled:
             self.head_dist = nn.Linear(self.embed_dim, self.num_classes) if num_classes > 0 else nn.Identity()
@@ -252,7 +253,7 @@ class VisionTransformer(nn.Module):
         x = self.blocks(x)
         x = self.norm(x)
         if self.dist_token is None:
-            return self.pre_logits(x[:, 0])
+            return self.pre_logits(x[:, 0])#第0维就是之间cat进来的类别维度
         else:
             return x[:, 0], x[:, 1]
 
